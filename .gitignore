@@ -1,4 +1,6 @@
 .vs/
+__pycache__/
 openslide-win64-20230414/
 output/
+temp/
 input/
