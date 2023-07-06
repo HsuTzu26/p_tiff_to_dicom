@@ -8,6 +8,13 @@ from pydicom.uid import generate_uid
 from pydicom.encaps import encapsulate
 
 def parse_tag_file(tag_file):
+    """
+    解析標籤文字檔案，獲取標籤字典。
+    Args:
+        tag_file: 標籤檔案的路徑
+    Returns:
+        tags: 標籤字典
+    """
     tags = {}
     with open(tag_file, 'r', encoding='utf-8') as file:
         for line in file:
@@ -20,34 +27,45 @@ def parse_tag_file(tag_file):
     return tags
 
 def resize_and_fill(image, target_size):
-    # 创建一个空白的图像
+    """
+    將圖像縮放並填充到指定的目標大小。
+    Args:
+        image: PIL圖像對象
+        target_size: 目標大小 (寬度, 高度)
+    Returns:
+        new_image: 縮放並填充後的圖像
+    """
+    # 創建一個空白的圖像
     new_image = Image.new("RGB", target_size, color="black")
 
-    # 计算缩放比例
-    width, height = target_size
-
-    # 缩放图像
-    resized_image = image.resize((width , height))
-    print(target_size)
-    # 将缩放后的图像粘贴
+    # 縮放圖像
+    resized_image = image.resize(target_size)
+    
+    # 將縮放後的圖像粘貼到新圖像中
     new_image.paste(resized_image, (0, 0))
-    #new_image.save(generate_uid() + ".jpg")
+    
     return new_image
 
 def preprocess_images(input_folder, output_file, tag_file):
-
-    # 创建一个空的DICOM数据集
+    """
+    將一堆jpg依照命名規則的圖檔，加上文字檔的tag，生成multiframe DICOM文件。
+    Args:
+        input_folder: 輸入圖像的文件夾
+        output_file: 輸出的DICOM文件路徑
+        tag_file: 標籤檔案的路徑
+    """
+    # 創建一個空的DICOM數據集
     file_meta = Dataset()
-
-    # 先把基本要顯示圖所必需的tag的先填入 之後再讀取文字檔案做替換修改
-    ds = FileDataset(output_file, {},file_meta = file_meta,preamble=b'\0'*128)
+    ds = FileDataset(output_file, {}, file_meta=file_meta, preamble=b'\0'*128)
+    
+    # 設置DICOM數據集的初始屬性
     ds.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.1'
     ds.StudyInstanceUID = generate_uid() 
     ds.SeriesInstanceUID = generate_uid()
     ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.77.1.6.1'
     ds.SOPInstanceUID = generate_uid()
     ds.PatientID = "aaaaaawer"
-    ds.Modality = 'SM'  # 这里使用'SM'表示静态图像
+    ds.Modality = 'SM'
     ds.PatientName = 'Anonymous'
     ds.PatientSex = 'M'
     ds.PatientBirthDate = '19600101'
@@ -114,7 +132,7 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds.SecondaryCaptureDeviceID = tags.get('Secondary Capture Device ID', '')
     ds.StudyID = tags.get('Study ID', '')
 
-    # 提取所有图像文件的y和x坐标值
+    # 提取所有圖像文件的y和x坐標值
     y_values = []
     x_values = []
     jpg_files = []
@@ -127,47 +145,47 @@ def preprocess_images(input_folder, output_file, tag_file):
             y_values.append(int(y))
             x_values.append(int(x))
 
-    # 计算最大的y和x值
+    # 計算最大的y和x值
     max_y = max(y_values)
     max_x = max(x_values)
 
-    # 对图像文件进行排序，确保按照正确的顺序排列
+    # 對圖像文件進行排序，確保按照正確的順序排列
     jpg_files.sort(key=lambda f: [int(d) for d in f[:-4].split('_')[-2:]])
 
-    # 读取第一张图像获取其大小
+    # 讀取第一張圖像獲取其大小
     first_image_path = os.path.join(input_folder, jpg_files[0])
     first_image = Image.open(first_image_path)
     target_size = first_image.size
 
-    # 定义缩放比例
-    scale_factor = 1  # 根据需要进行调整
+    # 定義縮放比例
+    scale_factor = 1  # 根據需要進行調整
     target_size = tuple([int(scale_factor*x) for x in target_size])
 
-    # 计算调整后的TotalPixelMatrixRows和TotalPixelMatrixColumns
+    # 計算調整後的TotalPixelMatrixRows和TotalPixelMatrixColumns
     total_rows = (max_y + 1) * target_size[1]
     total_columns = (max_x + 1) * target_size[0]
 
-    # 创建一个空的Pixel Data列表
+    # 創建一個空的Pixel Data列表
     pixel_data_list = []
 
-    # 遍历排好序的图像文件
+    # 遍歷排好序的圖像文件
     for i, jpg_file in enumerate(jpg_files):
-        # 读取原始图像
+        # 讀取原始圖像
         image = Image.open(os.path.join(input_folder, jpg_file))
 
-        # 显示当前处理的图像文件
+        # 顯示當前處理的圖像文件
         print(f"Processing image {i+1}/{len(jpg_files)}: {jpg_file}")
 
-        # 缩放和填充图像
+        # 縮放和填充圖像
         processed_image = resize_and_fill(image, target_size)
 
-        # 将图像转换为字节数据
+        # 將圖像轉換為字節數據
         pixel_data = processed_image.tobytes()
 
         # 添加到Pixel Data列表中
         pixel_data_list.append(pixel_data)    
 
-    # 设置DICOM数据集的相关属性
+    # 設置DICOM數據集的相關屬性
 
     ds.NumberOfFrames = len(jpg_files)
 
@@ -175,22 +193,25 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds.Rows = maxSide
     ds.Columns = maxSide
 
-    # 设置调整后的TotalPixelMatrixRows和TotalPixelMatrixColumns
+    # 設置調整後的TotalPixelMatrixRows和TotalPixelMatrixColumns
     ds.TotalPixelMatrixRows = total_rows
     ds.TotalPixelMatrixColumns = total_columns
     
-    # 创建一个空的PixelData列表
+    # 創建一個空的PixelData列表
     pixel_data = b''
 
-    # 将每帧像素数据添加到PixelData列表中
+    # 將每幀像素數據添加到PixelData列表中
     for frame_data in pixel_data_list:
         pixel_data += frame_data
 
-    # 将像素数据赋值给PixelData属性
+    # 將PixelData賦值給DICOM數據集
     ds.PixelData = pixel_data
-    ds.is_little_endian = True  
-    ds.is_implicit_VR = True
 
-    # 保存DICOM文件
-    pydicom.filewriter.write_file(output_file, ds, write_like_original=False)
+    # 將DICOM數據集保存為文件
+    ds.save_as(output_file)
 
+    # 調整後的PixelData列表
+    ds.PixelData = encapsulate([pixel_data])
+
+    # 保存DICOM數據集為文件
+    ds.save_as(output_file)
