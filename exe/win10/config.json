@@ -1,0 +1,5 @@
+{
+    "OPENSLIDE_PATH":"C:\\Users\\10user\\Desktop\\Programming\\Python\\p_tiff_to_dicom\\openslide",
+    "INPUT_FOLDER":"D:\\病理影像(H99)",
+    "OUTPUT_FOLDER":".\\output"
+}
