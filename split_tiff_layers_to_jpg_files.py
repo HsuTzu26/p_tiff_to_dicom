@@ -1,4 +1,9 @@
-OPENSLIDE_PATH = r'D:\Programming\python\p_tiff_to_dicom\openslide-win64-20230414\openslide-win64-20230414\bin'
+import json
+# 讀取 config.json 檔案
+with open('config.json', 'r', encoding='utf-8') as config_file:
+    config = json.load(config_file)
+
+OPENSLIDE_PATH = config["OPENSLIDE_PATH"]
 
 import os
 from PIL import Image
