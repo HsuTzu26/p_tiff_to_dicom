@@ -62,7 +62,8 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.1'
     ds.StudyInstanceUID = generate_uid() 
     ds.SeriesInstanceUID = generate_uid()
-    ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.77.1.6.1'
+    # ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.77.1.6.1'
+    ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.77.1.6' # VL Whole Slide Microscopy Image Storage
     ds.SOPInstanceUID = generate_uid()
     ds.PatientID = "aaaaaawer"
     ds.Modality = 'SM'
@@ -104,7 +105,7 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds.StudyScheduledPathologistName = tags.get('Study Scheduled Pathologist Name', '')
     ds.SecondPathologistName = tags.get('Second Pathologist Name', '')
     ds.SeriesInstanceUID = tags.get('Series Instance UID', '')
-    ds.Modality = tags.get('Modality', '')
+    # ds.Modality = tags.get('Modality', '') #需移除，因為會被 _metadata.txt 裡的 Modality 覆蓋
     ds.Manufacturer = tags.get('Manufacturer', '')
     ds.InstitutionName = tags.get('Institution Name', '')
     ds.InstitutionalDepartmentName = tags.get('Institutional Department Name', '')
