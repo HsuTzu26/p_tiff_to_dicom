@@ -1,4 +1,4 @@
-tag_file_path="D:\\AUUFFC_cylab\\DITTO\\p_tiff_to_dicom\\tiff\83f0783b-c8e2-4209-83a5-819029d0bb0a-S110-18074C_metadata.txt"
+tag_file_path="./tiff\example_metadata.txt"
 
 with open(tag_file_path, 'r', encoding='utf-8') as f:
     metadata = f.readlines()
