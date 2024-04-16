@@ -1,4 +1,5 @@
 import os
+import gc
 from PIL import Image
 import pydicom
 from pydicom import FileDataset
@@ -6,6 +7,7 @@ from pydicom.dataset import Dataset
 from pydicom.sequence import Sequence
 from pydicom.uid import generate_uid
 from pydicom.encaps import encapsulate
+from pydicom.encaps import encapsulate_extended
 
 def parse_tag_file(tag_file):
     """
@@ -36,7 +38,7 @@ def resize_and_fill(image, target_size):
         new_image: 縮放並填充後的圖像
     """
     # 創建一個空白的圖像
-    new_image = Image.new("RGB", target_size, color="black")
+    new_image = Image.new("RGB", target_size, color="white")
 
     # 縮放圖像
     resized_image = image.resize(target_size)
@@ -59,7 +61,9 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds = FileDataset(output_file, {}, file_meta=file_meta, preamble=b'\0'*128)
     
     # 設置DICOM數據集的初始屬性
-    ds.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.1'
+    ds.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.1' # explicit little endian
+    # ds.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.4.70' # JPEG Lossless, Non-Hierarchical, First-Order Prediction (Process 14 [Selection Value 1])
+    # ds.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.4.90' # Compressed JPEG 2000 Image Compression (Lossless Only) 需特殊 decoder
     ds.StudyInstanceUID = generate_uid() 
     ds.SeriesInstanceUID = generate_uid()
     # ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.77.1.6.1'
@@ -105,7 +109,7 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds.StudyScheduledPathologistName = tags.get('Study Scheduled Pathologist Name', '')
     ds.SecondPathologistName = tags.get('Second Pathologist Name', '')
     ds.SeriesInstanceUID = tags.get('Series Instance UID', '')
-    # ds.Modality = tags.get('Modality', '') #需移除，因為會被 _metadata.txt 裡的 Modality 覆蓋
+    # ds.Modality = tags.get('Modality', '')
     ds.Manufacturer = tags.get('Manufacturer', '')
     ds.InstitutionName = tags.get('Institution Name', '')
     ds.InstitutionalDepartmentName = tags.get('Institutional Department Name', '')
@@ -166,6 +170,8 @@ def preprocess_images(input_folder, output_file, tag_file):
     total_rows = (max_y + 1) * target_size[1]
     total_columns = (max_x + 1) * target_size[0]
 
+    # print(total_rows, total_columns)
+
     # 創建一個空的Pixel Data列表
     pixel_data_list = []
 
@@ -174,17 +180,26 @@ def preprocess_images(input_folder, output_file, tag_file):
         # 讀取原始圖像
         image = Image.open(os.path.join(input_folder, jpg_file))
 
+        #RGB 通道互換問題 (R, G 需互換)
+        r,g,b= image.split()
+        image = Image.merge("RGB", (b,r,g)) # openslide
+        # image = Image.merge("RGB", (g,r,b))
+
         # 顯示當前處理的圖像文件
         print(f"Processing image {i+1}/{len(jpg_files)}: {jpg_file}")
 
         # 縮放和填充圖像
-        processed_image = resize_and_fill(image, target_size)
+        # processed_image = resize_and_fill(image, target_size)
 
         # 將圖像轉換為字節數據
-        pixel_data = processed_image.tobytes()
+        pixel_data = image.tobytes()
 
         # 添加到Pixel Data列表中
-        pixel_data_list.append(pixel_data)    
+        pixel_data_list.append(pixel_data)  
+
+        # 釋放 JPG 圖像所儲存的記憶體
+        del image
+        gc.collect()
 
     # 設置DICOM數據集的相關屬性
 
@@ -198,21 +213,37 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds.TotalPixelMatrixRows = total_rows
     ds.TotalPixelMatrixColumns = total_columns
     
+    print('=== Processing Pixel Data... ===')
     # 創建一個空的PixelData列表
     pixel_data = b''
+    # frames = []
+    # tmp_list=[]
+    # frames: list[bytes] = [...]
 
     # 將每幀像素數據添加到PixelData列表中
     for frame_data in pixel_data_list:
+        # print(f"Adding image bytes {frame_data}: {frame_data}")
+        # tmp_list.append(frame_data)
+        # print(f'Appendind pixel data {len(frames) + 1}...')
+
         pixel_data += frame_data
-
-    # 將PixelData賦值給DICOM數據集
-    ds.PixelData = pixel_data
-
-    # 將DICOM數據集保存為文件
-    ds.save_as(output_file)
+        # frames.append(pixel_data)
+        # if len(tmp_list) == 1300: # 1300 ok, but 1500 is failed
+        #     break
+        
+        # 釋放 pixel data 儲存的記憶體
+        # del pixel_data
+        # gc.collect()
 
     # 調整後的PixelData列表
     ds.PixelData = encapsulate([pixel_data])
+    ds.PixelData = encapsulate(frames=[pixel_data], has_bot=True, fragments_per_frame=1)
+    #out: tuple[bytes, bytes, bytes] = encapsulate(frames=frames, has_bot=False, fragments_per_frame=1)
 
-    # 保存DICOM數據集為文件
+    # out: tuple[bytes, bytes, bytes] = encapsulate_extended(frames)
+    # ds.PixelData = out[0]
+    # ds.ExtendedOffsetTable = out[1]
+    # ds.ExtendedOffsetTableLengths = out[2]
+
+    # # 保存DICOM數據集為文件
     ds.save_as(output_file)
