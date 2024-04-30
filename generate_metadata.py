@@ -1,4 +1,10 @@
-tag_file_path="./tiff\example_metadata.txt"
+import os
+import json
+# 讀取 config.json 檔案
+with open('config.json', 'r', encoding='utf-8') as config_file:
+    config = json.load(config_file)
+
+tag_file_path = "./example_metadata.txt"
 
 with open(tag_file_path, 'r', encoding='utf-8') as f:
     metadata = f.readlines()
@@ -90,13 +96,13 @@ def generate_metadata():
     metadata_dic["Secondary Capture Device ID"] = uuid.uuid4()
     metadata_dic["Study ID"] = f"S123-{randomString}"
 
-    f_path = f"./tiff/{accessionNumber}_metadata.txt"
+    f_path = f"./input_folder/{accessionNumber}_metadata.txt"
     with open(f_path, "w") as f:
         for k, v in metadata_dic.items():
             f.writelines(f"{k}: {v}\n")
     # return metadata_dic
 
-generate_metadata()
+# generate_metadata()
 
 
 
