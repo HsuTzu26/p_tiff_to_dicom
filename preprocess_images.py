@@ -1,11 +1,18 @@
 import os
 import gc
-from PIL import Image
-import pydicom
+import copy
+import numpy as np
+
+from io import BytesIO
+from uuid import uuid4
+from PIL import ImageFile, Image
+Image.MAX_IMAGE_PIXELS = None
+
+# import pydicom
 from pydicom import FileDataset
-from pydicom.dataset import Dataset
+from pydicom.dataset import Dataset, FileMetaDataset
 from pydicom.sequence import Sequence
-from pydicom.uid import generate_uid
+from pydicom.uid import generate_uid, ExplicitVRLittleEndian, JPEGBaseline8Bit, JPEG2000Lossless, VLWholeSlideMicroscopyImageStorage, PYDICOM_IMPLEMENTATION_UID
 from pydicom.encaps import encapsulate
 from pydicom.encaps import encapsulate_extended
 
@@ -56,19 +63,26 @@ def preprocess_images(input_folder, output_file, tag_file):
         output_file: 輸出的DICOM文件路徑
         tag_file: 標籤檔案的路徑
     """
+    instance_uid = generate_uid()
+
     # 創建一個空的DICOM數據集
-    file_meta = Dataset()
-    ds = FileDataset(output_file, {}, file_meta=file_meta, preamble=b'\0'*128)
-    
+    file_meta = FileMetaDataset()
+    ds = Dataset()
+
     # 設置DICOM數據集的初始屬性
-    ds.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.1' # explicit little endian
-    # ds.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.4.70' # JPEG Lossless, Non-Hierarchical, First-Order Prediction (Process 14 [Selection Value 1])
-    # ds.file_meta.TransferSyntaxUID = '1.2.840.10008.1.2.4.90' # Compressed JPEG 2000 Image Compression (Lossless Only) 需特殊 decoder
+    file_meta.MediaStorageSOPClassUID = VLWholeSlideMicroscopyImageStorage
+    file_meta.MediaStorageSOPInstanceUID = instance_uid
+    file_meta.ImplementationClassUID = PYDICOM_IMPLEMENTATION_UID
+    file_meta.FileMetaInformationVersion = b'\x00\x01'
+    file_meta.TransferSyntaxUID = JPEGBaseline8Bit  # JPEG Baseline
+    file_meta.ImplementationVersionName = 'OFFIS_DCMTK_367'
+    file_meta.FileMetaInformationGroupLength = len(file_meta)
+    ds.file_meta = file_meta
+
     ds.StudyInstanceUID = generate_uid() 
     ds.SeriesInstanceUID = generate_uid()
-    # ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.77.1.6.1'
-    ds.SOPClassUID = '1.2.840.10008.5.1.4.1.1.77.1.6' # VL Whole Slide Microscopy Image Storage
-    ds.SOPInstanceUID = generate_uid()
+    ds.SOPClassUID = VLWholeSlideMicroscopyImageStorage # VL Whole Slide Microscopy Image Storage
+    ds.SOPInstanceUID =  file_meta.MediaStorageSOPInstanceUID
     ds.PatientID = "aaaaaawer"
     ds.Modality = 'SM'
     ds.PatientName = 'Anonymous'
@@ -109,7 +123,6 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds.StudyScheduledPathologistName = tags.get('Study Scheduled Pathologist Name', '')
     ds.SecondPathologistName = tags.get('Second Pathologist Name', '')
     ds.SeriesInstanceUID = tags.get('Series Instance UID', '')
-    # ds.Modality = tags.get('Modality', '')
     ds.Manufacturer = tags.get('Manufacturer', '')
     ds.InstitutionName = tags.get('Institution Name', '')
     ds.InstitutionalDepartmentName = tags.get('Institutional Department Name', '')
@@ -120,7 +133,6 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds.SecondaryCaptureDeviceManufacturer = tags.get('Secondary Capture Device Manufacturer', '')
     ds.SecondaryCaptureDeviceManufacturerModelName = tags.get('Secondary Capture Device Manufacturer\'s Model Name', '')
     ds.SecondaryCaptureDeviceSoftwareVersions = tags.get('Secondary Capture Device Software Versions', '')
-    ds.SOPInstanceUID = tags.get('SOP Instance UID', '')
     ds.PixelSpacing = [float(x) for x in tags['Pixel Spacing'].split(', ')]
     ds.LossyImageCompression = tags.get('Lossy Image Compression', '')
     ds.LossyImageCompressionRatio = tags.get('Lossy Image Compression Ratio', '')
@@ -138,9 +150,8 @@ def preprocess_images(input_folder, output_file, tag_file):
     ds.StudyID = tags.get('Study ID', '')
 
     # 提取所有圖像文件的y和x坐標值
-    y_values = []
-    x_values = []
-    jpg_files = []
+    y_values, x_values, jpg_files = [], [], []
+
     for file in os.listdir(input_folder):
         if file.endswith('.jpg'):
             jpg_files.append(file)
@@ -149,6 +160,7 @@ def preprocess_images(input_folder, output_file, tag_file):
             x = parts[-1]
             y_values.append(int(y))
             x_values.append(int(x))
+    pass
 
     # 計算最大的y和x值
     max_y = max(y_values)
@@ -170,80 +182,51 @@ def preprocess_images(input_folder, output_file, tag_file):
     total_rows = (max_y + 1) * target_size[1]
     total_columns = (max_x + 1) * target_size[0]
 
-    # print(total_rows, total_columns)
-
     # 創建一個空的Pixel Data列表
     pixel_data_list = []
 
     # 遍歷排好序的圖像文件
     for i, jpg_file in enumerate(jpg_files):
-        # 讀取原始圖像
-        image = Image.open(os.path.join(input_folder, jpg_file))
-
-        #RGB 通道互換問題 (R, G 需互換)
-        r,g,b= image.split()
-        image = Image.merge("RGB", (b,r,g)) # openslide
-        # image = Image.merge("RGB", (g,r,b))
-
         # 顯示當前處理的圖像文件
         print(f"Processing image {i+1}/{len(jpg_files)}: {jpg_file}")
 
-        # 縮放和填充圖像
-        # processed_image = resize_and_fill(image, target_size)
+        # 讀取原始圖像
+        loaded_image = Image.open(os.path.join(input_folder, jpg_file))
+        loaded_image = loaded_image.convert("RGB")
 
-        # 將圖像轉換為字節數據
-        pixel_data = image.tobytes()
+        image_str_buf = BytesIO()
+
+        # # # 將圖像轉換為字節數據
+        loaded_image.save(image_str_buf, format="JPEG", progressive=False) # JPEG2000 PIL 儲存有問題
+        pixel_data = image_str_buf.getvalue()
 
         # 添加到Pixel Data列表中
-        pixel_data_list.append(pixel_data)  
+        pixel_data_list.append(pixel_data)
 
-        # 釋放 JPG 圖像所儲存的記憶體
-        del image
+        del loaded_image
         gc.collect()
+    pass
 
-    # 設置DICOM數據集的相關屬性
-
+    ### 設置DICOM數據集的相關屬性, Frames, Rows, Columns 數值 ###
     ds.NumberOfFrames = len(jpg_files)
+    print(ds.NumberOfFrames)
 
-    maxSide = max(target_size[1], target_size[0])
-    ds.Rows = maxSide
-    ds.Columns = maxSide
+    maxSlide = max(target_size[1], target_size[0])
+    ds.Rows = maxSlide
+    ds.Columns = maxSlide
 
     # 設置調整後的TotalPixelMatrixRows和TotalPixelMatrixColumns
     ds.TotalPixelMatrixRows = total_rows
     ds.TotalPixelMatrixColumns = total_columns
     
     print('=== Processing Pixel Data... ===')
-    # 創建一個空的PixelData列表
-    pixel_data = b''
-    # frames = []
-    # tmp_list=[]
-    # frames: list[bytes] = [...]
 
-    # 將每幀像素數據添加到PixelData列表中
-    for frame_data in pixel_data_list:
-        # print(f"Adding image bytes {frame_data}: {frame_data}")
-        # tmp_list.append(frame_data)
-        # print(f'Appendind pixel data {len(frames) + 1}...')
+    ### encapsulate the pixel data list ###
+    # ds.PixelData = encapsulate(pixel_data_list)
+    out: tuple[bytes, bytes, bytes] = encapsulate_extended(pixel_data_list)
+    ds.PixelData = out[0]
+    ds.ExtendedOffsetTable = out[1]
+    ds.ExtendedOffsetTableLengths = out[2]
 
-        pixel_data += frame_data
-        # frames.append(pixel_data)
-        # if len(tmp_list) == 1300: # 1300 ok, but 1500 is failed
-        #     break
-        
-        # 釋放 pixel data 儲存的記憶體
-        # del pixel_data
-        # gc.collect()
-
-    # 調整後的PixelData列表
-    ds.PixelData = encapsulate([pixel_data])
-    ds.PixelData = encapsulate(frames=[pixel_data], has_bot=True, fragments_per_frame=1)
-    #out: tuple[bytes, bytes, bytes] = encapsulate(frames=frames, has_bot=False, fragments_per_frame=1)
-
-    # out: tuple[bytes, bytes, bytes] = encapsulate_extended(frames)
-    # ds.PixelData = out[0]
-    # ds.ExtendedOffsetTable = out[1]
-    # ds.ExtendedOffsetTableLengths = out[2]
-
-    # # 保存DICOM數據集為文件
-    ds.save_as(output_file)
+    # 保存DICOM數據集為文件
+    ds.save_as(output_file, write_like_original=False)

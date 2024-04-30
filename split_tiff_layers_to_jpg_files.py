@@ -40,17 +40,19 @@ def split_tiff_layers_to_jpg_files(input_file, output_folder, target_layer=None,
 
     # 刪除輸出資料夾底下的所有檔案
     file_list = os.listdir(output_folder)
+
     for file_name in file_list:
         file_path = os.path.join(output_folder, file_name)
         os.remove(file_path)
+    pass
 
     # 開啟TIFF圖像
-    # slide = OpenSlide(input_file)
     slide = OpenSlide(input_file)
 
     # 獲取圖層數量
     num_layers = slide.level_count
     print(f"numlayers={num_layers}")
+
     # 確定目標圖層的範圍
     if target_layer is not None:
         if target_layer < 1 or target_layer > num_layers:
@@ -60,6 +62,7 @@ def split_tiff_layers_to_jpg_files(input_file, output_folder, target_layer=None,
 
         start_layer = target_layer - 1
         end_layer = target_layer
+
     else:
         start_layer = 0
         end_layer = num_layers
@@ -73,8 +76,6 @@ def split_tiff_layers_to_jpg_files(input_file, output_folder, target_layer=None,
         num_regions_x = max((width + image_width - 1) // image_width, 1)
         num_regions_y = max((height + image_height - 1) // image_height, 1)
         num_regions = max(num_regions_x,num_regions_y)
-
-        print(num_regions_x, num_regions_y)
 
         # 逐區域寫入JPG檔案
         for y in range(num_regions):
@@ -108,6 +109,13 @@ def split_tiff_layers_to_jpg_files(input_file, output_folder, target_layer=None,
 
                 print(f"已寫入檔案：{filename}")
 
+                del target_image
+                gc.collect()
+
+            pass
+        pass
+    pass
+
     # 關閉圖像
     slide.close()
 
@@ -121,13 +129,15 @@ def split_tiff_layers_to_jpg_files_slice(input_file, output_folder, target_layer
     """
 
     # 建立輸出資料夾
-    os.makedirs(output_folder, exist_ok=True)\
+    os.makedirs(output_folder, exist_ok=True)
 
     # 刪除輸出資料夾底下的所有檔案
     file_list = os.listdir(output_folder)
+
     for file_name in file_list:
         file_path = os.path.join(output_folder, file_name)
         os.remove(file_path)
+    pass
 
 
     # 開啟TIFF檔案
@@ -175,8 +185,10 @@ def split_tiff_layers_to_jpg_files_slice(input_file, output_folder, target_layer
             del region_rgba
             gc.collect()
 
+        pass
+    pass
 
-    # 關閉圖像
+    # 關閉病理切片圖像
     slide.close()
 
 def fill_transparent_with_white(img):
@@ -185,6 +197,7 @@ def fill_transparent_with_white(img):
     img: RGBA模式的PIL圖片對象。
     返回填充透明部分後的新PIL圖片對象。
     """
+
     # 創建白色背景圖片
     background = Image.new('RGBA', img.size, (255, 255, 255, 255))
     
